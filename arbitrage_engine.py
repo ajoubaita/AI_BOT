@@ -382,9 +382,32 @@ class ArbitrageEngine:
         try:
             # In test mode, simulate successful execution
             if test_mode:
-                logger.info(f"[PAPER TRADE] Simulating execution of {len(opportunity.legs)} legs")
+                logger.info(f"[PAPER TRADE] Simulating {opportunity.opportunity_type} arbitrage")
+                logger.info(f"[PAPER TRADE] Executing {len(opportunity.legs)} legs:")
 
+                # Log each leg of the trade
                 for i, leg in enumerate(opportunity.legs):
+                    platform = leg.get('platform')
+                    action = leg.get('action')
+
+                    if platform == 'kalshi':
+                        side = leg.get('side')
+                        ticker = leg.get('ticker')
+                        price = leg.get('price')
+                        count = leg.get('count')
+                        logger.info(
+                            f"[PAPER TRADE]   Leg {i+1}: {action.upper()} {count} {ticker} "
+                            f"{side.upper()} @ ${price:.4f} on Kalshi"
+                        )
+                    elif platform == 'polymarket':
+                        token_id = leg.get('token_id')
+                        price = leg.get('price')
+                        size = leg.get('size')
+                        logger.info(
+                            f"[PAPER TRADE]   Leg {i+1}: {action.upper()} {size} contracts "
+                            f"@ ${price:.4f} on Polymarket (token: {token_id[:8]}...)"
+                        )
+
                     results['legs'].append({
                         'success': True,
                         'simulated': True,
@@ -399,10 +422,23 @@ class ArbitrageEngine:
                 self.total_pnl += opportunity.expected_profit
                 self.trades_executed += 1
 
+                # Log immediate arbitrage profit (locked-in)
                 logger.info(
-                    f"✅ [PAPER TRADE] Simulated profit: ${opportunity.expected_profit:.4f}, "
-                    f"Paper PnL: ${self.total_pnl:.2f}"
+                    f"✅ [PAPER TRADE] IMMEDIATE LOCKED-IN PROFIT: ${opportunity.expected_profit:.4f}"
                 )
+                logger.info(f"[PAPER TRADE] Strategy: {opportunity.opportunity_type}")
+                logger.info(f"[PAPER TRADE] Confidence: {opportunity.confidence:.1%}")
+
+                if opportunity.opportunity_type == 'intra_platform':
+                    logger.info(f"[PAPER TRADE] Mechanism: Buy YES+NO < $1.00, guaranteed payout $1.00")
+                elif opportunity.opportunity_type == 'cross_platform':
+                    logger.info(f"[PAPER TRADE] Mechanism: Buy low on one platform, sell high on other")
+
+                logger.info(
+                    f"[PAPER TRADE] Running Total Paper PnL: ${self.total_pnl:.2f} "
+                    f"(Daily: ${self.daily_pnl:.2f})"
+                )
+                logger.info("-" * 70)
 
                 return results
             # Execute all legs concurrently

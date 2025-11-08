@@ -145,13 +145,45 @@ class MarketDiscovery:
                 async with self.session.get(url, params=params, timeout=30) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        logger.error(f"Polymarket API error: {response.status} - {error_text}")
+                        logger.error(f"Polymarket API error: {response.status} - {error_text[:200]}")
+                        logger.error(f"Request URL: {url}")
+                        logger.error(f"Request params: {params}")
                         break
 
-                    data = await response.json()
+                    try:
+                        data = await response.json()
+                    except Exception as json_error:
+                        response_text = await response.text()
+                        logger.error(f"Failed to parse Polymarket JSON: {json_error}")
+                        logger.error(f"Response text (first 500 chars): {response_text[:500]}")
+                        break
 
-                    if not data or not isinstance(data, list):
+                    # Check if data is valid
+                    if data is None:
+                        logger.warning("Polymarket returned null/empty response")
+                        break
+
+                    if not isinstance(data, list):
+                        # Try to handle if it's wrapped in an object
+                        if isinstance(data, dict):
+                            logger.info(f"Polymarket response is dict with keys: {list(data.keys())}")
+                            # Try common wrapper keys
+                            if 'data' in data:
+                                data = data['data']
+                            elif 'events' in data:
+                                data = data['events']
+                            elif 'results' in data:
+                                data = data['results']
+                            else:
+                                logger.warning(f"Polymarket returned dict but no known wrapper key: {list(data.keys())}")
+                                break
+
+                    if not isinstance(data, list):
                         logger.warning(f"Polymarket returned unexpected data format: {type(data)}")
+                        break
+
+                    if len(data) == 0:
+                        logger.info("Polymarket returned empty list (no more markets)")
                         break
 
                     # Normalize each event and its markets
@@ -255,6 +287,14 @@ class MarketDiscovery:
         if isinstance(polymarket_markets, Exception):
             logger.error(f"Polymarket fetch failed: {polymarket_markets}")
             polymarket_markets = []
+
+        # Log detailed results
+        logger.info(f"Kalshi markets: {len(kalshi_markets)}")
+        logger.info(f"Polymarket markets: {len(polymarket_markets)}")
+
+        if len(polymarket_markets) == 0:
+            logger.warning("⚠️ Polymarket returned 0 markets - API may be down or changed")
+            logger.warning("   Bot will continue with Kalshi intra-platform arbitrage only")
 
         all_markets = kalshi_markets + polymarket_markets
         logger.info(f"Total markets discovered: {len(all_markets)}")
