@@ -1,5 +1,6 @@
 #!/bin/bash
 # Quick deployment script for DigitalOcean server
+# ALWAYS starts in paper trading mode by default
 
 echo "🚀 Deploying Arbitrage Bot Updates..."
 
@@ -22,47 +23,40 @@ pip install -r requirements.txt --quiet
 echo "🛑 Stopping existing bot instances..."
 pkill -f "python.*main.py" || echo "No running instances found"
 
-# Start the bot
-echo "▶️ Starting bot..."
-echo ""
-echo "Choose mode:"
-echo "1) Test Mode (Paper Trading)"
-echo "2) Production Mode (Real Trading)"
-read -p "Enter choice (1 or 2): " choice
+# Always start in TEST MODE (paper trading)
+echo "▶️ Starting bot in PAPER TRADING MODE..."
 
-if [ "$choice" = "1" ]; then
-    echo "Starting in TEST MODE (Paper Trading)..."
-    # Update .env to enable test mode
-    sed -i 's/TEST_MODE=false/TEST_MODE=true/' .env
+# Ensure .env has test mode enabled
+sed -i 's/TEST_MODE=false/TEST_MODE=true/' .env
 
-    screen -dmS arbitrage_bot bash -c "source venv/bin/activate && python main.py"
+# Start bot in background screen session
+screen -dmS arbitrage_bot bash -c "source venv/bin/activate && python main.py"
+
+# Wait a moment for startup
+sleep 2
+
+# Check if it's running
+if ps aux | grep -v grep | grep "python.*main.py" > /dev/null; then
     echo ""
-    echo "✅ Bot started in TEST MODE!"
-    echo "   Paper trading PnL will be tracked"
-elif [ "$choice" = "2" ]; then
-    echo "Starting in PRODUCTION MODE (Real Trading)..."
-    # Update .env to disable test mode
-    sed -i 's/TEST_MODE=true/TEST_MODE=false/' .env
-
-    read -p "⚠️  WARNING: This uses REAL MONEY. Are you sure? (yes/no): " confirm
-    if [ "$confirm" = "yes" ]; then
-        screen -dmS arbitrage_bot bash -c "source venv/bin/activate && python main.py"
-        echo ""
-        echo "✅ Bot started in PRODUCTION MODE!"
-        echo "   Real trades will be executed"
-    else
-        echo "Cancelled."
-        exit 0
-    fi
+    echo "✅ Bot started successfully in PAPER TRADING MODE!"
+    echo ""
+    echo "📊 The bot is now:"
+    echo "   • Scanning 115k+ Kalshi markets"
+    echo "   • Detecting arbitrage opportunities"
+    echo "   • Simulating trades (no real money)"
+    echo "   • Tracking paper trading PnL"
+    echo ""
+    echo "📈 Useful Commands:"
+    echo "   View live logs:     tail -f ~/AI_BOT/arbitrage_bot.log"
+    echo "   Monitor in real-time: watch -n 5 'tail -30 ~/AI_BOT/arbitrage_bot.log'"
+    echo "   Attach to session:  screen -r arbitrage_bot"
+    echo "   Stop bot:           pkill -f 'python.*main.py'"
+    echo "   Check if running:   ps aux | grep main.py"
+    echo ""
+    echo "💡 Let it run for a week, then review paper trading results!"
 else
-    echo "Invalid choice. Exiting."
+    echo ""
+    echo "❌ Failed to start bot. Check logs:"
+    echo "   tail -50 ~/AI_BOT/arbitrage_bot.log"
     exit 1
 fi
-
-echo ""
-echo "📊 Useful Commands:"
-echo "   View logs:      tail -f ~/AI_BOT/arbitrage_bot.log"
-echo "   Attach screen:  screen -r arbitrage_bot"
-echo "   Stop bot:       pkill -f 'python.*main.py'"
-echo "   Check status:   ps aux | grep main.py"
-echo ""
