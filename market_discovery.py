@@ -142,14 +142,16 @@ class MarketDiscovery:
 
                 logger.info(f"Fetching Polymarket markets (offset: {offset})")
 
-                async with self.session.get(url, params=params) as response:
+                async with self.session.get(url, params=params, timeout=30) as response:
                     if response.status != 200:
-                        logger.error(f"Polymarket API error: {response.status}")
+                        error_text = await response.text()
+                        logger.error(f"Polymarket API error: {response.status} - {error_text}")
                         break
 
                     data = await response.json()
 
                     if not data or not isinstance(data, list):
+                        logger.warning(f"Polymarket returned unexpected data format: {type(data)}")
                         break
 
                     # Normalize each event and its markets

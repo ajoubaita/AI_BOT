@@ -353,9 +353,13 @@ class ArbitrageEngine:
 
         return confidence
 
-    async def execute_opportunity(self, opportunity: ArbitrageOpportunity) -> Dict:
+    async def execute_opportunity(self, opportunity: ArbitrageOpportunity, test_mode: bool = False) -> Dict:
         """
         Execute an arbitrage opportunity
+
+        Args:
+            opportunity: The arbitrage opportunity to execute
+            test_mode: If True, simulate execution and track paper trading PnL
 
         Returns:
             Execution results
@@ -364,17 +368,43 @@ class ArbitrageEngine:
             logger.warning("Circuit breaker triggered - cannot execute")
             return {'success': False, 'error': 'Circuit breaker triggered'}
 
-        logger.info(f"Executing arbitrage: {opportunity}")
+        logger.info(f"{'[PAPER TRADE] ' if test_mode else ''}Executing arbitrage: {opportunity}")
 
         results = {
             'opportunity': opportunity,
             'legs': [],
             'success': False,
             'executed_legs': 0,
-            'total_legs': len(opportunity.legs)
+            'total_legs': len(opportunity.legs),
+            'test_mode': test_mode
         }
 
         try:
+            # In test mode, simulate successful execution
+            if test_mode:
+                logger.info(f"[PAPER TRADE] Simulating execution of {len(opportunity.legs)} legs")
+
+                for i, leg in enumerate(opportunity.legs):
+                    results['legs'].append({
+                        'success': True,
+                        'simulated': True,
+                        'leg': leg
+                    })
+
+                results['executed_legs'] = len(opportunity.legs)
+                results['success'] = True
+
+                # Track paper trading PnL
+                self.daily_pnl += opportunity.expected_profit
+                self.total_pnl += opportunity.expected_profit
+                self.trades_executed += 1
+
+                logger.info(
+                    f"✅ [PAPER TRADE] Simulated profit: ${opportunity.expected_profit:.4f}, "
+                    f"Paper PnL: ${self.total_pnl:.2f}"
+                )
+
+                return results
             # Execute all legs concurrently
             leg_tasks = []
             for leg in opportunity.legs:

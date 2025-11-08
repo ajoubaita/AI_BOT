@@ -156,15 +156,21 @@ class ArbitrageBotSupervisor:
             logger.info(f"   Subscribing to {len(kalshi_tickers)} Kalshi markets")
             logger.info(f"   Subscribing to {len(polymarket_tokens)} Polymarket markets")
 
-            # Start WebSocket manager in background
-            self.ws_task = asyncio.create_task(
-                self.ws_manager.start(kalshi_tickers, polymarket_tokens)
-            )
+            # Only start WebSocket manager if we have markets to monitor
+            if kalshi_tickers or polymarket_tokens:
+                # Start WebSocket manager in background
+                self.ws_task = asyncio.create_task(
+                    self.ws_manager.start(kalshi_tickers, polymarket_tokens)
+                )
 
-            # Wait a bit for initial data
-            await asyncio.sleep(5)
+                # Wait a bit for initial data
+                await asyncio.sleep(5)
 
-            logger.info("✅ WebSocket streams started")
+                logger.info("✅ WebSocket streams started")
+            else:
+                logger.warning("⚠️ No markets to monitor - WebSocket streams not started")
+                logger.info("   Bot will continue scanning for intra-platform arbitrage")
+
             return True
 
         except Exception as e:
@@ -196,13 +202,13 @@ class ArbitrageBotSupervisor:
 
                         logger.info(f"   Executing: {opp}")
 
-                        if self.test_mode:
-                            logger.info("   [TEST MODE] Skipping actual execution")
-                        else:
-                            result = await self.arbitrage_engine.execute_opportunity(opp)
+                        result = await self.arbitrage_engine.execute_opportunity(
+                            opp,
+                            test_mode=self.test_mode
+                        )
 
-                            if result['success']:
-                                self.opportunities_executed += 1
+                        if result['success']:
+                            self.opportunities_executed += 1
 
                 # Print status every 60 scans (~1 minute)
                 if scan_count % 60 == 0:
