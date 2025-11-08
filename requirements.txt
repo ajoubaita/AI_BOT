@@ -1,0 +1,17 @@
+# Core dependencies for arbitrage trading bot
+requests>=2.31.0
+websockets>=12.0
+websocket-client>=1.6.0
+cryptography>=41.0.0
+python-dotenv>=1.0.0
+py-clob-client>=0.20.0
+aiohttp>=3.9.0
+asyncio>=3.4.3
+
+# Data handling
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Utilities
+python-dateutil>=2.8.2
+pytz>=2023.3
