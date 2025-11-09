@@ -9,6 +9,7 @@ import asyncio
 from typing import List, Dict, Optional
 import aiohttp
 from dotenv import load_dotenv
+from market_discovery_polymarket import PolymarketMarketDiscovery
 
 load_dotenv()
 
@@ -120,7 +121,7 @@ class MarketDiscovery:
             logger.warning(f"Error normalizing Kalshi market: {e}")
             return None
 
-    async def fetch_polymarket_markets(self) -> List[Dict]:
+    async def fetch_polymarket_markets_legacy(self) -> List[Dict]:
         """
         Fetch all open markets from Polymarket Gamma API with pagination
 
@@ -259,6 +260,29 @@ class MarketDiscovery:
             logger.warning(f"Error normalizing Polymarket event: {e}")
 
         return normalized_markets
+
+    async def fetch_polymarket_markets(self) -> List[Dict]:
+        """
+        Fetch Polymarket markets using the robust Gamma API implementation
+
+        Returns:
+            List of normalized market dictionaries with token IDs
+        """
+        try:
+            async with PolymarketMarketDiscovery() as poly_discovery:
+                # Run health check first
+                healthy = await poly_discovery.health_check()
+                if not healthy:
+                    logger.error("Polymarket health check failed")
+                    return []
+
+                # Fetch markets
+                markets = await poly_discovery.fetch_markets()
+                return markets
+
+        except Exception as e:
+            logger.error(f"Error in Polymarket discovery: {e}")
+            return []
 
     async def discover_all_markets(self) -> List[Dict]:
         """

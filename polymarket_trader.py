@@ -114,17 +114,19 @@ class PolymarketTrader:
         price: float,
         size: float,
         side: str,  # 'BUY' or 'SELL'
-        order_type: str = 'GTC'  # Good-Til-Cancelled
+        order_type: str = 'GTC',  # Good-Til-Cancelled
+        neg_risk: bool = False  # NegRisk flag for special markets
     ) -> Dict:
         """
         Place an order on Polymarket
 
         Args:
-            token_id: Token ID for the outcome
+            token_id: Token ID for the outcome (from market discovery)
             price: Price per contract (0-1)
             size: Number of contracts
             side: 'BUY' or 'SELL'
             order_type: Order type (default: GTC)
+            neg_risk: Set to True for NegRisk markets (check market.neg_risk flag)
 
         Returns:
             Order response data
@@ -134,6 +136,13 @@ class PolymarketTrader:
             return {'success': False, 'error': 'Client not initialized'}
 
         try:
+            # Validate token_id is provided
+            if not token_id:
+                return {
+                    'success': False,
+                    'error': 'token_id is required for CLOB trading'
+                }
+
             # Validate price (must be between 0 and 1)
             if not 0 < price < 1:
                 return {
@@ -141,15 +150,19 @@ class PolymarketTrader:
                     'error': f'Invalid price: {price}. Must be between 0 and 1'
                 }
 
-            logger.info(f"Placing Polymarket order: {side} {size} contracts @ ${price}")
+            logger.info(f"Placing Polymarket order: {side} {size} contracts @ ${price} (token: {token_id[:8]}...)")
 
             # Create order arguments
+            # Note: OrderArgs automatically handles NegRisk markets via the client
             order_args = OrderArgs(
                 price=price,
                 size=size,
                 side=side.upper(),
                 token_id=token_id
             )
+
+            if neg_risk:
+                logger.debug(f"NegRisk market detected for token {token_id[:8]}...")
 
             # Place order
             if order_type.upper() == 'GTC':
@@ -181,13 +194,13 @@ class PolymarketTrader:
                 'error': str(e)
             }
 
-    async def buy(self, token_id: str, size: float, price: float) -> Dict:
+    async def buy(self, token_id: str, size: float, price: float, neg_risk: bool = False) -> Dict:
         """Buy contracts"""
-        return await self.place_order(token_id, price, size, 'BUY')
+        return await self.place_order(token_id, price, size, 'BUY', neg_risk=neg_risk)
 
-    async def sell(self, token_id: str, size: float, price: float) -> Dict:
+    async def sell(self, token_id: str, size: float, price: float, neg_risk: bool = False) -> Dict:
         """Sell contracts"""
-        return await self.place_order(token_id, price, size, 'SELL')
+        return await self.place_order(token_id, price, size, 'SELL', neg_risk=neg_risk)
 
     async def get_order_status(self, order_id: str) -> Dict:
         """Get status of an order"""

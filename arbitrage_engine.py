@@ -190,9 +190,10 @@ class ArbitrageEngine:
                     {
                         'platform': 'polymarket',
                         'action': 'buy',
-                        'token_id': polymarket_market['ticker_or_token_id'],
+                        'token_id': polymarket_market.get('yes_token_id', polymarket_market['ticker_or_token_id']),
                         'price': polymarket_ask,
-                        'size': position_size
+                        'size': position_size,
+                        'neg_risk': polymarket_market.get('neg_risk', False)
                     },
                     {
                         'platform': 'kalshi',
@@ -225,9 +226,10 @@ class ArbitrageEngine:
                     {
                         'platform': 'polymarket',
                         'action': 'sell',
-                        'token_id': polymarket_market['ticker_or_token_id'],
+                        'token_id': polymarket_market.get('yes_token_id', polymarket_market['ticker_or_token_id']),
                         'price': polymarket_bid,
-                        'size': position_size
+                        'size': position_size,
+                        'neg_risk': polymarket_market.get('neg_risk', False)
                     }
                 ]
             )
@@ -519,11 +521,12 @@ class ArbitrageEngine:
                 token_id = leg['token_id']
                 price = leg['price']
                 size = leg['size']
+                neg_risk = leg.get('neg_risk', False)  # Get NegRisk flag from market data
 
                 if action == 'buy':
-                    result = await self.polymarket_trader.buy(token_id, size, price)
+                    result = await self.polymarket_trader.buy(token_id, size, price, neg_risk=neg_risk)
                 else:  # sell
-                    result = await self.polymarket_trader.sell(token_id, size, price)
+                    result = await self.polymarket_trader.sell(token_id, size, price, neg_risk=neg_risk)
 
             else:
                 result = {'success': False, 'error': f'Unknown platform: {platform}'}
