@@ -294,6 +294,14 @@ class PolymarketMarketDiscovery:
                 # Also check clobTokenIds field (alternative location)
                 clob_token_ids = market.get('clobTokenIds', [])
 
+                # Handle case where clobTokenIds might be a JSON string instead of array
+                if isinstance(clob_token_ids, str):
+                    try:
+                        import json
+                        clob_token_ids = json.loads(clob_token_ids)
+                    except:
+                        clob_token_ids = []
+
                 # Debug first market
                 if not hasattr(self, '_logged_tokens'):
                     logger.debug(f"Token structure - tokens: {tokens[:2] if tokens else 'empty'}")
@@ -351,8 +359,16 @@ class PolymarketMarketDiscovery:
                     yes_price = 0.5
                     no_price = 0.5
 
-                # Get volume/liquidity
-                volume = float(market.get('liquidityNum', market.get('liquidity', 0)))
+                # Get volume/liquidity - handle multiple possible fields
+                volume = 0.0
+                for field in ['liquidityNum', 'liquidity', 'volume']:
+                    try:
+                        vol_value = market.get(field)
+                        if vol_value is not None:
+                            volume = float(vol_value)
+                            break
+                    except (ValueError, TypeError):
+                        continue
 
                 # Check for NegRisk flag (important for CLOB trading)
                 neg_risk = market.get('negRisk', False)
