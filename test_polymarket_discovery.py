@@ -171,7 +171,8 @@ async def test_market_data_completeness():
         incomplete_markets = []
 
         for market in markets:
-            missing_fields = [field for field in required_fields if not market.get(field)]
+            # Check if field exists (not if it's truthy - 0.0 is valid for volume)
+            missing_fields = [field for field in required_fields if field not in market]
 
             if len(missing_fields) == 0:
                 complete_count += 1
