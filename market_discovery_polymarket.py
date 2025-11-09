@@ -261,6 +261,12 @@ class PolymarketMarketDiscovery:
             event_title = event.get('title', '')
             markets = event.get('markets', [])
 
+            # Debug: Log event structure for first few events
+            if len(markets) > 0 and not hasattr(self, '_logged_structure'):
+                logger.debug(f"Event structure sample: {list(event.keys())}")
+                logger.debug(f"First market keys: {list(markets[0].keys())}")
+                self._logged_structure = True
+
             for market in markets:
                 # Skip inactive markets
                 if market.get('closed', True):
@@ -272,16 +278,31 @@ class PolymarketMarketDiscovery:
                 condition_id = market.get('conditionId', '')
 
                 # Get token IDs for CLOB trading
-                # Gamma API provides tokens in the outcomes array
+                # Gamma API may provide tokens in different places
                 tokens = market.get('tokens', [])
                 outcomes = market.get('outcomes', [])
+
+                # Also check clobTokenIds field (alternative location)
+                clob_token_ids = market.get('clobTokenIds', [])
+
+                # Debug first market
+                if not hasattr(self, '_logged_tokens'):
+                    logger.debug(f"Token structure - tokens: {tokens[:2] if tokens else 'empty'}")
+                    logger.debug(f"Token structure - clobTokenIds: {clob_token_ids[:2] if clob_token_ids else 'empty'}")
+                    logger.debug(f"Token structure - outcomes: {outcomes[:2] if outcomes else 'empty'}")
+                    self._logged_tokens = True
 
                 # Find YES and NO token IDs
                 yes_token_id = None
                 no_token_id = None
 
-                # Method 1: Check tokens array (preferred)
-                if len(tokens) >= 2:
+                # Try clobTokenIds first (more reliable)
+                if clob_token_ids and len(clob_token_ids) >= 2:
+                    yes_token_id = clob_token_ids[0]
+                    no_token_id = clob_token_ids[1]
+
+                # Fallback: Check tokens array
+                elif len(tokens) >= 2:
                     # Typically tokens[0] is YES, tokens[1] is NO
                     # But verify by checking outcome names
                     for i, outcome_name in enumerate(outcomes):
@@ -291,15 +312,25 @@ class PolymarketMarketDiscovery:
                             elif outcome_name.lower() in ['no', 'false', '0']:
                                 no_token_id = tokens[i] if i < len(tokens) else None
 
-                # Method 2: Fallback - assume binary market with tokens[0]=YES, tokens[1]=NO
-                if not yes_token_id and len(tokens) >= 1:
+                    # If still no match, assume binary order
+                    if not yes_token_id and len(tokens) >= 1:
+                        yes_token_id = tokens[0]
+                    if not no_token_id and len(tokens) >= 2:
+                        no_token_id = tokens[1]
+
+                # Last resort: try acceptingOrders or active field
+                elif len(tokens) >= 1:
                     yes_token_id = tokens[0]
-                if not no_token_id and len(tokens) >= 2:
-                    no_token_id = tokens[1]
+                    no_token_id = tokens[1] if len(tokens) >= 2 else None
 
                 # Skip if we don't have token IDs (can't trade without them)
                 if not yes_token_id:
-                    logger.debug(f"Skipping market {market_id}: no YES token ID found")
+                    # Only log first few to avoid spam
+                    if not hasattr(self, '_skip_count'):
+                        self._skip_count = 0
+                    if self._skip_count < 3:
+                        logger.debug(f"Skipping market {market_id}: no YES token ID found (tokens={tokens}, clob={clob_token_ids})")
+                        self._skip_count += 1
                     continue
 
                 # Get prices
