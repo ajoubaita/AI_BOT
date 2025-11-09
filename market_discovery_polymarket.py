@@ -268,13 +268,22 @@ class PolymarketMarketDiscovery:
                 self._logged_structure = True
 
             for market in markets:
-                # Skip inactive markets
-                if market.get('closed', True):
-                    continue
-
-                # Extract market data
+                # Extract market data first for logging
                 market_id = market.get('id', '')
                 question = market.get('question', '')
+
+                # Skip markets that are closed OR not accepting orders
+                is_closed = market.get('closed', False)
+                accepting_orders = market.get('acceptingOrders', False)
+                is_active = market.get('active', False)
+
+                if is_closed:
+                    continue
+
+                # Prefer markets that are accepting orders and active
+                if not accepting_orders and not is_active:
+                    continue
+
                 condition_id = market.get('conditionId', '')
 
                 # Get token IDs for CLOB trading
@@ -333,14 +342,17 @@ class PolymarketMarketDiscovery:
                         self._skip_count += 1
                     continue
 
-                # Get prices
-                # outcomePrices is typically [yes_price, no_price]
+                # Get prices - handle both string and float formats
                 outcome_prices = market.get('outcomePrices', [])
-                yes_price = float(outcome_prices[0]) if len(outcome_prices) > 0 else 0.0
-                no_price = float(outcome_prices[1]) if len(outcome_prices) > 1 else 1.0 - yes_price
+                try:
+                    yes_price = float(outcome_prices[0]) if len(outcome_prices) > 0 else 0.0
+                    no_price = float(outcome_prices[1]) if len(outcome_prices) > 1 else 1.0 - yes_price
+                except (ValueError, TypeError):
+                    yes_price = 0.5
+                    no_price = 0.5
 
-                # Get volume
-                volume = float(market.get('volume', 0))
+                # Get volume/liquidity
+                volume = float(market.get('liquidityNum', market.get('liquidity', 0)))
 
                 # Check for NegRisk flag (important for CLOB trading)
                 neg_risk = market.get('negRisk', False)
