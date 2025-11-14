@@ -269,8 +269,54 @@ class ArbitrageBotSupervisor:
                 logger.error(f"Error in daily reset: {e}")
                 await asyncio.sleep(3600)  # Try again in an hour
 
+    async def websocket_watchdog(self):
+        """Monitor WebSocket health and restart if needed"""
+        logger.info("🔍 WebSocket watchdog started")
+
+        check_interval = 60  # Check every minute
+        last_price_count = 0
+        stale_count = 0
+
+        while self.running:
+            try:
+                await asyncio.sleep(check_interval)
+
+                if not self.ws_manager:
+                    continue
+
+                # Check if we're receiving price updates
+                current_price_count = len(self.price_store.get_all())
+
+                # If price count hasn't changed in 5 checks, WebSocket might be stale
+                if current_price_count == last_price_count and current_price_count == 0:
+                    stale_count += 1
+                    logger.warning(f"⚠️ WebSocket appears stale (no price data) - stale count: {stale_count}/5")
+
+                    if stale_count >= 5:
+                        logger.error("❌ WebSocket appears dead - attempting restart...")
+                        try:
+                            # Stop current WebSocket
+                            await self.ws_manager.stop()
+                            await asyncio.sleep(5)
+
+                            # Restart WebSocket streams
+                            await self.start_websocket_streams()
+                            stale_count = 0
+                            logger.info("✅ WebSocket restarted successfully")
+                        except Exception as e:
+                            logger.error(f"❌ Failed to restart WebSocket: {e}")
+                            logger.info("   Bot will continue without live prices")
+                else:
+                    stale_count = 0
+
+                last_price_count = current_price_count
+
+            except Exception as e:
+                logger.error(f"Error in WebSocket watchdog: {e}")
+                await asyncio.sleep(60)
+
     async def run(self):
-        """Main run loop"""
+        """Main run loop with resilient startup and recovery"""
         self.running = True
         self.start_time = datetime.now()
 
@@ -278,30 +324,69 @@ class ArbitrageBotSupervisor:
         logger.info("🤖 ARBITRAGE TRADING BOT STARTED")
         logger.info("="*60 + "\n")
 
+        # Retry initialization up to 5 times
+        init_retries = 5
+        for attempt in range(init_retries):
+            try:
+                # Initialize components
+                if await self.initialize():
+                    logger.info("✅ Initialization successful")
+                    break
+                else:
+                    logger.warning(f"⚠️ Initialization failed (attempt {attempt + 1}/{init_retries})")
+                    if attempt < init_retries - 1:
+                        await asyncio.sleep(10 * (attempt + 1))  # Exponential backoff
+            except Exception as e:
+                logger.error(f"❌ Initialization error (attempt {attempt + 1}/{init_retries}): {e}")
+                if attempt < init_retries - 1:
+                    await asyncio.sleep(10 * (attempt + 1))
+        else:
+            logger.error("Failed to initialize after 5 attempts - exiting")
+            return
+
+        # Retry market discovery up to 3 times
+        discovery_retries = 3
+        for attempt in range(discovery_retries):
+            try:
+                if await self.discover_markets():
+                    logger.info("✅ Market discovery successful")
+                    break
+                else:
+                    logger.warning(f"⚠️ Market discovery failed (attempt {attempt + 1}/{discovery_retries})")
+                    if attempt < discovery_retries - 1:
+                        await asyncio.sleep(5 * (attempt + 1))
+            except Exception as e:
+                logger.error(f"❌ Market discovery error (attempt {attempt + 1}/{discovery_retries}): {e}")
+                if attempt < discovery_retries - 1:
+                    await asyncio.sleep(5 * (attempt + 1))
+        else:
+            logger.error("Failed to discover markets after 3 attempts - exiting")
+            return
+
+        # Start WebSocket streams (non-fatal if fails - bot can still do intra-platform arb)
         try:
-            # Initialize components
-            if not await self.initialize():
-                logger.error("Failed to initialize - exiting")
-                return
-
-            # Discover markets
-            if not await self.discover_markets():
-                logger.error("Failed to discover markets - exiting")
-                return
-
-            # Start WebSocket streams
             if not await self.start_websocket_streams():
-                logger.error("Failed to start WebSocket streams - exiting")
-                return
+                logger.warning("⚠️ WebSocket streams failed to start - continuing without live prices")
+                logger.info("   Bot will operate using API polling only")
+        except Exception as e:
+            logger.error(f"❌ WebSocket startup error: {e} - continuing without live prices")
 
+        try:
             # Start background tasks
+            logger.info("🚀 Starting main arbitrage loop...")
             tasks = [
                 asyncio.create_task(self.arbitrage_loop()),
                 asyncio.create_task(self.daily_reset()),
+                asyncio.create_task(self.websocket_watchdog()),  # New watchdog task
             ]
 
-            # Wait for tasks
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # Wait for tasks (if any task crashes, others continue)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Log any task failures
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Task {i} failed with error: {result}")
 
         except Exception as e:
             logger.error(f"Error in main run loop: {e}")

@@ -1,0 +1,33 @@
+[Unit]
+Description=Polymarket/Kalshi Arbitrage Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/user/AI_BOT
+Environment="PATH=/home/user/AI_BOT/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Run the bot
+ExecStart=/home/user/AI_BOT/venv/bin/python /home/user/AI_BOT/main.py
+
+# Automatic restart configuration
+Restart=always
+RestartSec=10
+StartLimitInterval=0
+
+# Logging
+StandardOutput=append:/home/user/AI_BOT/arbitrage_bot.log
+StandardError=append:/home/user/AI_BOT/arbitrage_bot_error.log
+
+# Resource limits (optional - prevents runaway resource usage)
+MemoryLimit=2G
+CPUQuota=150%
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
