@@ -36,8 +36,8 @@ class MarketDiscovery:
 
     async def fetch_kalshi_markets(self) -> List[Dict]:
         """
-        Fetch open markets from Kalshi API with pagination
-        LIMIT: Fetch max 2000 markets to avoid infinite loop
+        Fetch ALL open markets from Kalshi API with pagination
+        Scans full market inventory (~115k markets) for arbitrage opportunities
 
         Returns:
             List of normalized market dictionaries
@@ -45,10 +45,10 @@ class MarketDiscovery:
         markets = []
         cursor = None
         limit = 100  # Max allowed by Kalshi
-        max_markets = 2000  # CRITICAL: Limit total markets to avoid infinite loop
+        pages_fetched = 0
 
         try:
-            while len(markets) < max_markets:
+            while True:
                 url = f"{self.kalshi_base_url}/markets"
                 params = {
                     'limit': limit,
@@ -57,7 +57,10 @@ class MarketDiscovery:
                 if cursor:
                     params['cursor'] = cursor
 
-                logger.info(f"Fetching Kalshi markets (cursor: {cursor}, fetched: {len(markets)}/{max_markets})")
+                pages_fetched += 1
+                # Log progress every 50 pages to avoid log spam
+                if pages_fetched % 50 == 0:
+                    logger.info(f"Fetching Kalshi markets (fetched: {len(markets):,}, pages: {pages_fetched})")
 
                 async with self.session.get(url, params=params) as response:
                     if response.status != 200:
@@ -77,18 +80,15 @@ class MarketDiscovery:
                             normalized = self._normalize_kalshi_market(market)
                             if normalized:
                                 markets.append(normalized)
-                                if len(markets) >= max_markets:
-                                    logger.info(f"Reached max_markets limit ({max_markets}), stopping fetch")
-                                    break
                         except Exception as e:
                             logger.warning(f"Error normalizing Kalshi market: {e}")
 
                     # Check for next page
                     cursor = data.get('cursor')
-                    if not cursor or len(batch) < limit or len(markets) >= max_markets:
+                    if not cursor or len(batch) < limit:
                         break
 
-            logger.info(f"✅ Fetched {len(markets)} Kalshi markets (max: {max_markets})")
+            logger.info(f"✅ Fetched {len(markets):,} Kalshi markets across {pages_fetched} pages")
             return markets
 
         except Exception as e:

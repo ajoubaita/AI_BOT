@@ -165,8 +165,8 @@ class PolymarketMarketDiscovery:
 
     async def fetch_markets(self) -> List[Dict]:
         """
-        Fetch tradable markets from Polymarket Gamma API
-        LIMIT: Fetch max 1000 markets to avoid infinite loop
+        Fetch ALL tradable markets from Polymarket Gamma API
+        Scans full market inventory (~20k markets) for arbitrage opportunities
 
         Returns:
             List of normalized market dictionaries with token IDs
@@ -176,12 +176,11 @@ class PolymarketMarketDiscovery:
         all_markets = []
         offset = 0
         limit = 100
-        max_markets = 1000  # CRITICAL: Limit total markets to avoid infinite loop
         total_events = 0
         orderbook_enabled_events = 0
 
         try:
-            while len(all_markets) < max_markets:
+            while True:
                 url = f"{self.gamma_base_url}/events"
                 params = {
                     'order': 'id',
@@ -191,7 +190,9 @@ class PolymarketMarketDiscovery:
                     'offset': offset
                 }
 
-                logger.info(f"Fetching Polymarket events (offset: {offset}, markets: {len(all_markets)}/{max_markets})")
+                # Log progress every 500 events to avoid spam
+                if offset % 500 == 0 and offset > 0:
+                    logger.info(f"Fetching Polymarket events (offset: {offset}, markets: {len(all_markets):,})")
 
                 data = await self._resilient_get(url, params)
 
@@ -218,15 +219,9 @@ class PolymarketMarketDiscovery:
                     markets = self._parse_event_markets(event)
                     all_markets.extend(markets)
 
-                    # Stop if we've reached the limit
-                    if len(all_markets) >= max_markets:
-                        logger.info(f"Reached max_markets limit ({max_markets}), stopping fetch")
-                        break
-
                 # Check for last page (short page indicates end)
-                if len(data) < limit or len(all_markets) >= max_markets:
-                    if len(data) < limit:
-                        logger.info(f"Reached last page (got {len(data)} < {limit})")
+                if len(data) < limit:
+                    logger.info(f"Reached last page (got {len(data)} < {limit})")
                     break
 
                 offset += limit
