@@ -114,13 +114,20 @@ class ArbitrageBotSupervisor:
                 similarity_threshold=0.7
             )
 
+            # Separate markets by platform
+            kalshi_markets = [m for m in markets if m['platform'] == 'kalshi']
+            polymarket_markets = [m for m in markets if m['platform'] == 'polymarket']
+
             logger.info(f"📊 Market Discovery Summary:")
             logger.info(f"   Total markets: {len(markets)}")
-            logger.info(f"   Kalshi markets: {len([m for m in markets if m['platform'] == 'kalshi'])}")
-            logger.info(f"   Polymarket markets: {len([m for m in markets if m['platform'] == 'polymarket'])}")
+            logger.info(f"   Kalshi markets: {len(kalshi_markets)}")
+            logger.info(f"   Polymarket markets: {len(polymarket_markets)}")
             logger.info(f"   Matched pairs: {len(self.market_mappings)}")
 
-            # Set mappings in arbitrage engine
+            # Set ALL markets in arbitrage engine for intra-platform scanning
+            self.arbitrage_engine.set_all_markets(kalshi_markets, polymarket_markets)
+
+            # Set mappings for cross-platform arbitrage
             self.arbitrage_engine.set_market_mappings(self.market_mappings)
 
             # Print top matches

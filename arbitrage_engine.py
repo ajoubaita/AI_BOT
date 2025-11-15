@@ -81,10 +81,20 @@ class ArbitrageEngine:
         # Market mappings (to be set externally)
         self.market_mappings: List[Dict] = []
 
+        # ALL discovered markets (for intra-platform scanning)
+        self.all_kalshi_markets: List[Dict] = []
+        self.all_polymarket_markets: List[Dict] = []
+
     def set_market_mappings(self, mappings: List[Dict]):
         """Set cross-platform market mappings for arbitrage"""
         self.market_mappings = mappings
         logger.info(f"Set {len(mappings)} market mappings for arbitrage")
+
+    def set_all_markets(self, kalshi_markets: List[Dict], polymarket_markets: List[Dict]):
+        """Set all discovered markets for intra-platform scanning"""
+        self.all_kalshi_markets = kalshi_markets
+        self.all_polymarket_markets = polymarket_markets
+        logger.info(f"Set {len(kalshi_markets)} Kalshi markets and {len(polymarket_markets)} Polymarket markets for scanning")
 
     async def scan_for_opportunities(self) -> List[ArbitrageOpportunity]:
         """
@@ -246,24 +256,50 @@ class ArbitrageEngine:
         """
         opportunities = []
 
-        # Check all markets in price store
+        # PRIORITY 1: Check WebSocket prices (if available - most recent)
         all_prices = self.price_store.get_all()
+        scanned_tickers = set()
 
         for (platform, market_id), prices in all_prices.items():
             try:
                 if platform == 'kalshi':
                     opp = self._check_kalshi_intra_platform(market_id, prices)
+                    scanned_tickers.add(market_id)
+                    if opp:
+                        opportunities.append(opp)
                 elif platform == 'polymarket':
                     # Polymarket YES/NO relationship is implicit
                     # NO = 1 - YES, so no arbitrage opportunity
                     continue
 
+            except Exception as e:
+                logger.error(f"Error scanning intra-platform arbitrage from WebSocket: {e}")
+
+        # PRIORITY 2: Scan ALL discovered Kalshi markets (using discovery data)
+        logger.info(f"Scanning {len(self.all_kalshi_markets)} Kalshi markets for intra-platform arbitrage...")
+
+        for market in self.all_kalshi_markets:
+            try:
+                ticker = market.get('market_id')
+                if not ticker or ticker in scanned_tickers:
+                    continue  # Already scanned from WebSocket
+
+                # Use prices from market discovery
+                prices = {
+                    'yes_ask': market.get('yes_ask', 0),
+                    'no_ask': market.get('no_ask', 0),
+                    'yes_bid': market.get('yes_bid', 0),
+                    'no_bid': market.get('no_bid', 0),
+                }
+
+                opp = self._check_kalshi_intra_platform(ticker, prices)
                 if opp:
                     opportunities.append(opp)
 
             except Exception as e:
-                logger.error(f"Error scanning intra-platform arbitrage: {e}")
+                logger.error(f"Error scanning Kalshi market {market.get('market_id')}: {e}")
 
+        logger.info(f"Found {len(opportunities)} intra-platform arbitrage opportunities")
         return opportunities
 
     def _check_kalshi_intra_platform(
