@@ -86,8 +86,8 @@ class ArbitrageBotSupervisor:
             self.market_discovery = MarketDiscovery()
             await self.market_discovery.__aenter__()
 
-            # Initialize WebSocket manager
-            self.ws_manager = WebSocketManager(self.price_store)
+            # Initialize WebSocket manager with Kalshi trader for auth
+            self.ws_manager = WebSocketManager(self.price_store, kalshi_trader=self.kalshi_trader)
 
             logger.info("✅ All components initialized successfully")
             return True

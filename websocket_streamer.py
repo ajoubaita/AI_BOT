@@ -53,18 +53,36 @@ class PriceStore:
 class KalshiWebSocketStreamer:
     """Handles Kalshi WebSocket connection and orderbook updates"""
 
-    def __init__(self, price_store: PriceStore, tickers: List[str]):
+    def __init__(self, price_store: PriceStore, tickers: List[str], kalshi_trader=None):
         self.ws_url = os.getenv('KALSHI_WS_URL', 'wss://api.elections.kalshi.com/trade-api/ws/v2')
         self.price_store = price_store
         self.tickers = tickers
+        self.kalshi_trader = kalshi_trader
         self.websocket = None
         self.running = False
 
     async def connect(self):
-        """Connect to Kalshi WebSocket"""
+        """Connect to Kalshi WebSocket with authentication"""
         try:
             logger.info("Connecting to Kalshi WebSocket...")
-            self.websocket = await websockets.connect(self.ws_url)
+
+            # Get fresh access token if trader is available
+            if self.kalshi_trader and self.kalshi_trader.access_token:
+                access_token = self.kalshi_trader.access_token
+                logger.info("Using authenticated WebSocket connection")
+
+                # Connect with auth token in headers
+                extra_headers = {
+                    'Authorization': f'Bearer {access_token}'
+                }
+                self.websocket = await websockets.connect(
+                    self.ws_url,
+                    extra_headers=extra_headers
+                )
+            else:
+                logger.warning("No access token available - connecting without auth (will likely fail)")
+                self.websocket = await websockets.connect(self.ws_url)
+
             logger.info("Connected to Kalshi WebSocket")
             self.running = True
 
@@ -75,6 +93,14 @@ class KalshiWebSocketStreamer:
 
         except Exception as e:
             logger.error(f"Error connecting to Kalshi WebSocket: {e}")
+            # If auth failed, try to re-authenticate
+            if self.kalshi_trader and "401" in str(e):
+                logger.info("Token may be expired, re-authenticating...")
+                try:
+                    await self.kalshi_trader.authenticate()
+                    logger.info("Re-authentication successful")
+                except Exception as auth_error:
+                    logger.error(f"Re-authentication failed: {auth_error}")
             return False
 
     async def subscribe(self):
@@ -234,14 +260,19 @@ class PolymarketWebSocketStreamer:
             return
 
         try:
-            for token_id in self.token_ids:
+            # Subscribe with delays to avoid rate limiting
+            for i, token_id in enumerate(self.token_ids):
                 subscribe_msg = {
                     'type': 'subscribe',
                     'channel': 'market',
                     'market': token_id
                 }
                 await self.websocket.send(json.dumps(subscribe_msg))
-                logger.info(f"Subscribed to Polymarket token: {token_id}")
+                logger.info(f"Subscribed to Polymarket token {i+1}/{len(self.token_ids)}: {token_id}")
+
+                # Add 100ms delay between subscriptions to avoid rate limiting
+                if i < len(self.token_ids) - 1:
+                    await asyncio.sleep(0.1)
 
         except Exception as e:
             logger.error(f"Error subscribing to Polymarket markets: {e}")
@@ -365,8 +396,9 @@ class PolymarketWebSocketStreamer:
 class WebSocketManager:
     """Manages WebSocket connections for both platforms"""
 
-    def __init__(self, price_store: PriceStore):
+    def __init__(self, price_store: PriceStore, kalshi_trader=None):
         self.price_store = price_store
+        self.kalshi_trader = kalshi_trader
         self.kalshi_streamer: Optional[KalshiWebSocketStreamer] = None
         self.polymarket_streamer: Optional[PolymarketWebSocketStreamer] = None
         self.running = False
@@ -376,7 +408,11 @@ class WebSocketManager:
         self.running = True
 
         # Initialize streamers
-        self.kalshi_streamer = KalshiWebSocketStreamer(self.price_store, kalshi_tickers)
+        self.kalshi_streamer = KalshiWebSocketStreamer(
+            self.price_store,
+            kalshi_tickers,
+            kalshi_trader=self.kalshi_trader
+        )
         self.polymarket_streamer = PolymarketWebSocketStreamer(self.price_store, polymarket_tokens)
 
         # Connect to both platforms
